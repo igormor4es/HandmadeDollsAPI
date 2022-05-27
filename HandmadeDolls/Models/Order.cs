@@ -15,15 +15,10 @@ public class Order
 
 public enum OrderStatus
 {
-    [Display(Name = "Order Received")]
-    OrderReceived = 1,
-    [Display(Name = "Awaiting Payment")]
-    AwaitingPayment = 2,
-    [Display(Name = "Order in Separation")]
-    OrderInSeparation = 3,
-    [Display(Name = "Invoice Issued")]
-    InvoiceIssued = 4,
-    [Display(Name = "Delivered")]
-    OrderDelivered = 5
+    ORDER_RECEIVED = 1,
+    AWAITING_PAYMENT = 2,
+    ORDER_IN_SEPARATION = 3,
+    INVOICE_ISSUED = 4,
+    ORDER_DELIVERED = 5
 }
 

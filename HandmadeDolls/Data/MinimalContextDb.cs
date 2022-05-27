@@ -22,7 +22,6 @@ public class MinimalContextDb : DbContext
             entity.Property(e => e.Price).HasPrecision(18, 2);
             entity.Property(e => e.Stock).IsRequired();
             entity.Property(e => e.Active).IsRequired();
-            entity.Property(e => e.IsGift).IsRequired();
         });
 
         modelBuilder.Entity<DollAcessory>(entity =>

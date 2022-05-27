@@ -8,7 +8,6 @@ public class Product
     public int Stock { get; set; }
     public byte[]? Image { get; set; }
     public bool Active { get; set; }
-    public bool IsGift { get; set; }
     public ProductType ProductType { get; set; }
 
     public ICollection<OrderList>? OrderLists { get; set; }
@@ -17,6 +16,6 @@ public class Product
 }
 public enum ProductType
 {
-    DOLL, 
-    ACESSORY
+    DOLL = 1, 
+    ACESSORY = 2
 }
