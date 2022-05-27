@@ -1,4 +1,6 @@
-﻿namespace HandmadeDolls.Models;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace HandmadeDolls.Models;
 
 public class Product
 {
@@ -12,10 +14,18 @@ public class Product
 
     public ICollection<OrderList>? OrderLists { get; set; }
     public ICollection<DollAcessory>? Dolls { get; set; }
-    public ICollection<DollAcessory>? Acessories { get; set; }
+    public ICollection<DollAcessory>? Accessories { get; set; }
 }
 public enum ProductType
 {
-    DOLL = 1, 
+    /// <summary>
+    /// Doll
+    /// </summary>
+    [Display(Name = "Doll")]
+    DOLL = 1,
+    /// <summary>
+    /// Acessory
+    /// </summary>
+    [Display(Name = "Acessory")]
     ACESSORY = 2
 }

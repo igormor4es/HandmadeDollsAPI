@@ -29,7 +29,7 @@ public class MinimalContextDb : DbContext
             entity.ToTable("DollsAccessories");
             entity.HasKey(e => e.Id);
             entity.HasOne(e => e.ProductDoll).WithMany(x => x.Dolls).HasForeignKey(e => e.DollId).OnDelete(DeleteBehavior.NoAction);
-            entity.HasOne(e => e.ProductAcessory).WithMany(x => x.Acessories).HasForeignKey(e => e.AccessoryId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.ProductAcessory).WithMany(x => x.Accessories).HasForeignKey(e => e.AccessoryId).OnDelete(DeleteBehavior.NoAction);
             entity.Property<DateTime>("RegisteredOn").HasDefaultValueSql("GETDATE()");
         });
 
