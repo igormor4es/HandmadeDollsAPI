@@ -1,4 +1,6 @@
-﻿namespace HandmadeDolls.Models;
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace HandmadeDolls.Models;
 
 public class DollAcessory
 {
@@ -7,4 +9,6 @@ public class DollAcessory
     public Product? ProductDoll { get; set; }
     public int AccessoryId { get; set; }
     public Product? ProductAcessory { get; set; }
+    [NotMapped]
+    public string? Description { get; set; }
 }

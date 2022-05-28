@@ -18,14 +18,8 @@ public class Product
 }
 public enum ProductType
 {
-    /// <summary>
-    /// Doll
-    /// </summary>
     [Display(Name = "Doll")]
     DOLL = 1,
-    /// <summary>
-    /// Acessory
-    /// </summary>
-    [Display(Name = "Acessory")]
-    ACESSORY = 2
+    [Display(Name = "Accessory")]
+    ACCESSORY = 2
 }
