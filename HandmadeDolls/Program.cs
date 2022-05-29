@@ -1,5 +1,6 @@
 using HandmadeDolls.Data;
 using HandmadeDolls.Models;
+using HandmadeDolls.Repositorie;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,8 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(opt =>
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("ExcluirFornecedor", policy => policy.RequireClaim("ExcluirFornecedor"));
+    options.AddPolicy("Administrator", policy => policy.RequireClaim("Administrator"));
+    options.AddPolicy("Customer", policy => policy.RequireClaim("Customer"));
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -96,7 +98,6 @@ app.Run();
 
 #endregion
 
-
 #region Actions
 
 void MapActions(WebApplication app)
@@ -106,7 +107,7 @@ void MapActions(WebApplication app)
     app.MapPost("/Api/Registro", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, RegisterUser registerUser) =>
     {
         if (registerUser == null)
-            return Results.BadRequest("Usuário não informado.");
+            return Results.BadRequest("User not informed.");
 
         if (!MiniValidator.TryValidate(registerUser, out var errors))
             return Results.ValidationProblem(errors);
@@ -136,13 +137,13 @@ void MapActions(WebApplication app)
     }).ProducesValidationProblem()
       .Produces(StatusCodes.Status200OK)
       .Produces(StatusCodes.Status400BadRequest)
-      .WithName("RegistroUsuario")
-      .WithTags("Usuario");
+      .WithName("RegisterUser")
+      .WithTags("User");
 
     app.MapPost("/Api/Login", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, LoginUser loginUser) =>
     {
         if (loginUser == null)
-            return Results.BadRequest("Usuário não informado.");
+            return Results.BadRequest("User not informed.");
 
         if (!MiniValidator.TryValidate(loginUser, out var errors))
             return Results.ValidationProblem(errors);
@@ -150,10 +151,10 @@ void MapActions(WebApplication app)
         var result = await signInManager.PasswordSignInAsync(loginUser.Email, loginUser.Password, false, true);
 
         if (result.IsLockedOut)
-            return Results.BadRequest("Usuário bloqueado.");
+            return Results.BadRequest("Blocked user.");
 
         if (!result.Succeeded)
-            return Results.BadRequest("Usuário ou senha inválidos!");
+            return Results.BadRequest("Username or password is invalid!");
 
         var jwt = new JwtBuilder()
                       .WithUserManager(userManager)
@@ -169,8 +170,64 @@ void MapActions(WebApplication app)
     }).ProducesValidationProblem()
       .Produces(StatusCodes.Status200OK)
       .Produces(StatusCodes.Status400BadRequest)
-      .WithName("LoginUsuario")
-      .WithTags("Usuario");
+      .WithName("LoginUser")
+      .WithTags("User");
+
+    app.MapPost("/Api/UserClaim", [Authorize] async (SignInManager<IdentityUser> signInManager, MinimalContextDb context, string loginUser, string claim) =>
+    {        
+        if (loginUser == null)
+            return Results.BadRequest("User not informed.");
+
+        var currentUser = signInManager.UserManager.Users.FirstOrDefault(x => x.UserName == loginUser);
+        
+        if (currentUser == null)
+            return Results.BadRequest("User not found!");
+
+        var userClaim = await new UserRepository().UserClaim(currentUser, context, claim, builder.Configuration.GetConnectionString("DefaultConnection"));
+
+        var result = userClaim switch
+        {
+            1 => Results.BadRequest("This user already has this Claim!"),
+            2 => Results.Ok("Claim saved successfully!"),
+            _ => Results.BadRequest("There was a problem saving the record!")
+        };
+
+        return result;
+
+    }).ProducesValidationProblem()
+      .Produces(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .RequireAuthorization("Administrator")
+      .WithName("UserClaim")
+      .WithTags("User");
+
+    app.MapDelete("/Api/UserClaim", [Authorize] async (SignInManager<IdentityUser> signInManager, MinimalContextDb context, string loginUser, string claim) =>
+    {
+        if (loginUser == null)
+            return Results.BadRequest("User not informed.");
+
+        var currentUser = signInManager.UserManager.Users.FirstOrDefault(x => x.UserName == loginUser);
+
+        if (currentUser == null)
+            return Results.BadRequest("User not found!");
+
+        var delete = await new UserRepository().DeleteUserClaim(currentUser, context, claim, builder.Configuration.GetConnectionString("DefaultConnection"));
+
+        var result = delete switch
+        {
+            0 => Results.BadRequest("User does not have this claim."),
+            1 => Results.Ok("Claim removed."),
+            _ => Results.BadRequest("There was a problem deleting the record!")
+        };
+
+        return result;
+
+    }).Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status204NoContent)
+      .Produces(StatusCodes.Status404NotFound)
+      .RequireAuthorization("Administrator")
+      .WithName("DeleteUserClaim")
+      .WithTags("User");
 
     #endregion
 
@@ -180,77 +237,16 @@ void MapActions(WebApplication app)
 
     app.MapGet("/Product", /*[Authorize]*/ async (MinimalContextDb context) =>
     {
-        var products = await context.Products.Where(p => p.Active).ToListAsync();
-
-        foreach (var item in products)
-        {
-            if (item.ProductType.ToString() == "DOLL")
-            {
-                var accessories = await context.DollsAccessories
-                                               .AsNoTracking()
-                                               .Where(a => a.DollId == item.Id)
-                                               .ToListAsync();
-
-                if (accessories.Count > 0)
-                {
-                    item.Accessories = new List<DollAcessory>();
-                    
-                    foreach (var itens in accessories)
-                    {
-                        var prod = await context.Products
-                                                .Where(p => p.Active)
-                                                .FirstOrDefaultAsync(p => p.Id == itens.AccessoryId);
-
-                        var newProduct = new DollAcessory
-                        {
-                            Id = prod.Id,
-                            Description = prod.Description
-                        };
-
-                        item.Accessories.Add(newProduct);
-                    }
-                }
-            }
-        }
+        var products = await new ProductRepository().GetAllProducts(context);
 
         return products;
 
     }).WithName("GetProducts")
       .WithTags("Product");
 
-    app.MapGet("/Product/{id}", /*[Authorize]*/ async (int id, MinimalContextDb context) =>
+    app.MapGet("/Product/{id}", [Authorize] async (int id, MinimalContextDb context) =>
     {
-        var productById = await context.Products
-                                       .Where(p => p.Active)
-                                       .FirstOrDefaultAsync(p => p.Id == id);
-
-        if (productById?.ProductType.ToString() == "DOLL")
-        {
-            var accessories = await context.DollsAccessories
-                                           .AsNoTracking()
-                                           .Where(a => a.DollId == productById.Id)
-                                           .ToListAsync();
-            if (accessories.Count > 0)
-            {
-                productById.Accessories = new List<DollAcessory>();
-                
-                foreach (var item in accessories)
-                {
-                    var prod = await context.Products
-                                            .Where(p => p.Active)
-                                            .FirstOrDefaultAsync(p => p.Id == item.AccessoryId);
-
-                    var newProduct = new DollAcessory
-                    {
-                        Id = prod.Id,
-                        Description = prod.Description
-                    };
-
-                    productById.Accessories.Add(newProduct);
-                }
-            }
-        }
-
+        var productById = await new ProductRepository().GetProductById(id, context);
 
         return productById is Product product ? Results.Ok(product) : Results.NotFound();
         
@@ -263,123 +259,59 @@ void MapActions(WebApplication app)
 
     #region POST's
 
-    app.MapPost("/Product", /*[Authorize]*/ async (MinimalContextDb context, Product product) =>
-    {
-        var result = 0;
-        
+    app.MapPost("/Product", [Authorize] async (MinimalContextDb context, Product product) =>
+    {        
         if (!MiniValidator.TryValidate(product, out var errors))
             return Results.ValidationProblem(errors);
 
-        if (product.ProductType.ToString() == "DOLL")
+        var postProduct = await new ProductRepository().PostProduct(context, product);
+
+        var result = postProduct switch
         {
-            var accessories = product.Accessories?.ToList();          
+            1 => Results.CreatedAtRoute("GetProductById", new { id = product.Id }, product),
+            2 => Results.BadRequest("It is not possible to add the accessory as a gift."),
+            3 => Results.BadRequest("Sorry! The accessory chosen as a gift is no longer available."),
+            4 => Results.BadRequest("Sorry! It will not be possible to add the accessory as a gift, as the stock is out of stock."),
+            5 => Results.BadRequest("Sorry! It will not be possible to add the accessory as a gift as there is no more stock available at the moment."),
+            _ => Results.BadRequest("There was a problem saving the record!")
+        };
 
-            if (accessories != null && accessories.Count > 0)
-            {
-                var newProduct = new Product
-                {
-                    Description = product.Description,
-                    Price = product.Price,
-                    Stock = product.Stock,
-                    Image = product.Image,
-                    Active = product.Active,
-                    ProductType = product.ProductType,
-                };
-
-                context.Products.Add(newProduct);
-                result = await context.SaveChangesAsync();
-
-                foreach (var item in accessories)
-                {
-                    var accessory = await context.Products.FirstOrDefaultAsync(p => p.Id == item.AccessoryId);
-
-                    if (accessory != null)
-                    {
-                        if (accessory.ProductType == ProductType.DOLL)
-                        {
-                            using (var connection = context.Database.GetDbConnection())
-                            {
-                                await connection.OpenAsync();
-                                using (var command = connection.CreateCommand())
-                                {
-                                    command.CommandText = $"DELETE DollsAccessories WHERE DollId = {newProduct.Id}";
-                                    await command.ExecuteNonQueryAsync();
-
-                                    command.CommandText = $"DELETE Products WHERE Id = {newProduct.Id}";
-                                    await command.ExecuteNonQueryAsync();
-                                }
-                            }
-
-                            return Results.BadRequest("It is not possible to add " + accessory.Description + " as a gift.");
-                        }
-                        
-                        if (!accessory.Active)
-                        {
-                            using (var connection = context.Database.GetDbConnection())
-                            {
-                                await connection.OpenAsync();
-                                using (var command = connection.CreateCommand())
-                                {
-                                    command.CommandText = $"DELETE DollsAccessories WHERE DollId = {newProduct.Id}";
-                                    await command.ExecuteNonQueryAsync();
-
-                                    command.CommandText = $"DELETE Products WHERE Id = {newProduct.Id}";
-                                    await command.ExecuteNonQueryAsync();
-                                }
-                            }
-
-                            return Results.BadRequest("Sorry! The accessory " + accessory.Description + " chosen as a gift is no longer available.");
-                        }
-
-                        if (accessory.Stock <= 0)
-                        {
-                            using (var connection = context.Database.GetDbConnection())
-                            {
-                                await connection.OpenAsync();
-                                using (var command = connection.CreateCommand())
-                                {
-                                    command.CommandText = $"DELETE DollsAccessories WHERE DollId = {newProduct.Id}";
-                                    await command.ExecuteNonQueryAsync();
-
-                                    command.CommandText = $"DELETE Products WHERE Id = {newProduct.Id}";
-                                    await command.ExecuteNonQueryAsync();
-                                }
-                            }
-
-                            return Results.BadRequest("Sorry! It will not be possible to add the accessory " + accessory.Description + " as a gift as there is no more stock.");
-                        }
-
-                        DollAcessory dollAcessory = new()
-                        {
-                            DollId = newProduct.Id,
-                            AccessoryId = accessory.Id
-                        };
-
-                        context.DollsAccessories.Add(dollAcessory);
-                        result = await context.SaveChangesAsync();
-                    }                    
-                }    
-            }
-            else
-            {
-                context.Products.Add(product);
-                result = await context.SaveChangesAsync();
-            }
-        }
-        else
-        {
-            context.Products.Add(product);
-            result = await context.SaveChangesAsync();
-        }
-
-        return result > 0
-            ? Results.CreatedAtRoute("GetProductById", new { id = product.Id }, product)
-            : Results.BadRequest("There was a problem saving the record!");
+        return result;
 
     }).ProducesValidationProblem()
       .Produces<Product>(StatusCodes.Status201Created)
       .Produces(StatusCodes.Status400BadRequest)
+      .RequireAuthorization("Administrator")
       .WithName("PostProduct")
+      .WithTags("Product");
+
+    #endregion
+
+    #region PUT's
+
+    app.MapPut("/Api/Fornecedor/{id}", [Authorize] async (int id, MinimalContextDb context, Product product) =>
+    {
+        var putProduct = await context.Products.AsNoTracking<Product>().FirstOrDefaultAsync(p => p.Id == id);
+
+        if (putProduct == null)
+            return Results.NotFound();
+
+        if (!MiniValidator.TryValidate(product, out var errors))
+            return Results.ValidationProblem(errors);
+
+        //É necessário verificar se na tabela DollsAccessories ele não possui registros nela. Caso ele já exista lá e vc deseje alterar o seu ProductType isso não será possível.
+        context.Products.Update(product).State = EntityState.Modified;
+        var result = await context.SaveChangesAsync();
+
+        return result > 0
+            ? Results.CreatedAtRoute("GetProductById", new { id = product.Id }, product)
+            : Results.BadRequest("There was a problem editing the registry!");
+
+    }).ProducesValidationProblem()
+      .Produces(StatusCodes.Status204NoContent)
+      .Produces(StatusCodes.Status400BadRequest)
+      .RequireAuthorization("Administrator")
+      .WithName("PutProduct")
       .WithTags("Product");
 
     #endregion
