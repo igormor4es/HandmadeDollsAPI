@@ -1,4 +1,5 @@
-﻿using HandmadeDolls.Data;
+﻿using HandmadeDolls.DAL;
+using HandmadeDolls.Data;
 using HandmadeDolls.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -6,21 +7,22 @@ using Microsoft.EntityFrameworkCore;
 using NetDevPack.Identity.Model;
 using System.Data;
 using System.Data.Common;
+using static HandmadeDolls.Data.MinimalContextDb;
 
 namespace HandmadeDolls.Repositorie;
 
 public class UserRepository
 {
-    public async Task<int> UserClaim(IdentityUser? currentUser, MinimalContextDb context, string claim, string connectionString)
+    public async Task<int> UserClaim(IdentityUser? currentUser, string claim)
     {
         int result;
         
         try
         {
-            result = await VerifyUserClaim(currentUser, context, claim);
+            result = await VerifyUserClaim(currentUser, claim);
 
             if (result != 1)
-                result = await SaveUserClaim(currentUser, context, claim, connectionString);
+                result = await SaveUserClaim(currentUser, claim);
         }
         catch (Exception)
         {
@@ -30,17 +32,17 @@ public class UserRepository
         return result;
     }
 
-    public async Task<int> DeleteUserClaim(IdentityUser? currentUser, MinimalContextDb context, string claim, string connectionString)
+    public async Task<int> DeleteUserClaim(IdentityUser? currentUser, string claim)
     {
         int result;
 
         try
         {
-            result = await VerifyUserClaim(currentUser, context, claim);
+            result = await VerifyUserClaim(currentUser, claim);
 
             if (result == 1)
             {
-                await DeleteClaim(currentUser, context, claim, connectionString);
+                await DeleteClaim(currentUser, claim);
             }
         }
         catch (Exception)
@@ -51,16 +53,17 @@ public class UserRepository
         return result;
     }
 
-    public async Task<int> VerifyUserClaim(IdentityUser? currentUser, MinimalContextDb context, string claim)
+    public async Task<int> VerifyUserClaim(IdentityUser? currentUser, string claim)
     {
         var result = 0;
         LoginUser user = new();
 
-        using (var connection = context.Database.GetDbConnection())
+        await using (Context ctx = new())
         {
-            await connection.OpenAsync();
-            DbCommand cmd = connection.CreateCommand();
+            ctx.Connection.Open();
+            DbCommand cmd = ctx.Connection.CreateCommand();
             cmd.CommandText = $"SELECT ANU.UserName FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE UserId = '{currentUser?.Id}' AND ClaimType = '{claim}'";
+            cmd.CommandType = CommandType.Text;
 
             using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
             {
@@ -77,30 +80,33 @@ public class UserRepository
         return result;
     }
     
-    public async Task<int> SaveUserClaim(IdentityUser? currentUser, MinimalContextDb context, string claim, string connectionString)
+    public async Task<int> SaveUserClaim(IdentityUser? currentUser, string claim)
     {
         var result = 0;
         LoginUser user = new();
-        
-        using (var connection = context.Database.GetDbConnection())
+
+        await using (Context ctx = new())
         {
-            if (connection.State != ConnectionState.Open)
-            {
-                connection.ConnectionString = connectionString;
-                await connection.OpenAsync();
-            }
-
-            DbCommand cmd = connection.CreateCommand();
-
+            ctx.Connection.Open();
+            DbCommand cmd = ctx.Connection.CreateCommand();
             cmd.CommandText = $"INSERT AspNetUserClaims (UserId, ClaimType, ClaimValue) VALUES ('{currentUser?.Id}', '{claim}', '{claim}')";
-            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandType = CommandType.Text;
+            cmd.ExecuteNonQuery();
+        }
 
+        await using (Context ctx = new())
+        {
+            ctx.Connection.Open();
+            DbCommand cmd = ctx.Connection.CreateCommand();
             cmd.CommandText = $"SELECT ANU.UserName FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE UserId = '{currentUser?.Id}' AND ClaimType = '{claim}'";
-            var reader = await cmd.ExecuteReaderAsync();
+            cmd.CommandType = CommandType.Text;
 
-            while (reader.Read())
+            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
             {
-                user.Email = reader.GetString(0);
+                while (reader.Read())
+                {
+                    user.Email = reader.GetString(0);
+                }
             }
         }
 
@@ -110,48 +116,42 @@ public class UserRepository
         return result;
     }
 
-    public async Task DeleteClaim(IdentityUser? currentUser, MinimalContextDb context, string claim, string connectionString)
+    public async Task DeleteClaim(IdentityUser? currentUser, string claim)
     {    
-        using (var connection = context.Database.GetDbConnection())
+        await using (Context ctx = new())
         {
-            if (connection.State != ConnectionState.Open)
-            {
-                connection.ConnectionString = connectionString;
-                await connection.OpenAsync();
-            }
-                
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = $"DELETE AspNetUserClaims WHERE UserId = '{currentUser?.Id}' AND ClaimType = '{claim}'";
-                await command.ExecuteNonQueryAsync();
-            }
-        }      
+            ctx.Connection.Open();
+            DbCommand cmd = ctx.Connection.CreateCommand();
+            cmd.CommandText = $"DELETE AspNetUserClaims WHERE UserId = '{currentUser?.Id}' AND ClaimType = '{claim}'";
+            cmd.CommandType = CommandType.Text;
+            cmd.ExecuteNonQuery();
+        }
     }
 
-    public async Task<int> VerifyUser(MinimalContextDb context, Object? customer, string connectionString)
+    public async Task<int> VerifyUser(Object? customer)
     {
         LoginUser user = new();
 
-        using (var connection = context.Database.GetDbConnection())
+        if (customer != null)
         {
-            if (connection.State != ConnectionState.Open)
+            await using (Context ctx = new())
             {
-                connection.ConnectionString = connectionString;
-                await connection.OpenAsync();
-            }
+                ctx.Connection.Open();
+                DbCommand cmd = ctx.Connection.CreateCommand();
+                cmd.CommandText = $"SELECT UserName FROM AspNetUsers WHERE Email = @email";
+                cmd.CommandType = CommandType.Text;
 
-            DbCommand cmd = connection.CreateCommand();
-            cmd.CommandText = $"SELECT UserName FROM AspNetUsers WHERE Email = '{customer}'";
+                cmd.Parameters.Add(SQLUteis.GetSqlParameter("@email", SqlDbType.VarChar, customer));
 
-            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
-            {
-                while (reader.Read())
+                using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
                 {
-                    user.Email = reader.GetString(0);
+                    while (reader.Read())
+                    {
+                        user.Email = reader.GetValue<string>("UserName");
+                    }
                 }
             }
-            await connection.CloseAsync();
-        }
+        }     
 
         if (!String.IsNullOrEmpty(user.Email))
             return 1;
@@ -159,29 +159,29 @@ public class UserRepository
         return 0;
     }
 
-    public async Task<int> VerifyCustomerClain(MinimalContextDb context, Object? customer, string connectionString)
+    public async Task<int> VerifyCustomerClain(Object? customer)
     {
         LoginUser user = new();
 
-        using (var connection = context.Database.GetDbConnection())
+        if (customer != null)
         {
-            if (connection.State != ConnectionState.Open)
+            await using (Context ctx = new())
             {
-                connection.ConnectionString = connectionString;
-                await connection.OpenAsync();
-            }
-            
-            DbCommand cmd = connection.CreateCommand();
-            cmd.CommandText = $"SELECT ANU.UserName FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE ANU.UserName = '{customer}' AND ClaimType = 'Customer'";
+                ctx.Connection.Open();
+                DbCommand cmd = ctx.Connection.CreateCommand();
+                cmd.CommandText = $"SELECT ANU.UserName FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE ANU.UserName = @email AND ClaimType = 'Customer'";
+                cmd.CommandType = CommandType.Text;
 
-            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
-            {
-                while (reader.Read())
+                cmd.Parameters.Add(SQLUteis.GetSqlParameter("@email", SqlDbType.VarChar, customer));
+
+                using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
                 {
-                    user.Email = reader.GetString(0);
-                }              
+                    while (reader.Read())
+                    {
+                        user.Email = reader.GetValue<string>("UserName");
+                    }
+                }
             }
-            await connection.CloseAsync();
         }
 
         if (!String.IsNullOrEmpty(user.Email))
@@ -190,26 +190,27 @@ public class UserRepository
         return 0;
     }
 
-    public async Task<Guid> GetUserId(MinimalContextDb context, Object? customer, string connectionString)
+    public async Task<Guid> GetUserId(Object? customer)
     {
         Order order = new();
 
-        using (var connection = context.Database.GetDbConnection())
+        if (customer != null)
         {
-            if (connection.State != ConnectionState.Open)
+            await using (Context ctx = new())
             {
-                connection.ConnectionString = connectionString;
-                await connection.OpenAsync();
-            }
-            
-            DbCommand cmd = connection.CreateCommand();
-            cmd.CommandText = $"SELECT AUC.UserId FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE ANU.UserName = '{customer}' AND ClaimType = 'Customer'";
+                ctx.Connection.Open();
+                DbCommand cmd = ctx.Connection.CreateCommand();
+                cmd.CommandText = $"SELECT AUC.UserId FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE ANU.UserName = @email AND ClaimType = 'Customer'";
+                cmd.CommandType = CommandType.Text;
 
-            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
-            {
-                while (reader.Read())
+                cmd.Parameters.Add(SQLUteis.GetSqlParameter("@email", SqlDbType.VarChar, customer));
+
+                using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
                 {
-                    order.CustomerId = Guid.Parse(reader.GetString(0));
+                    while (reader.Read())
+                    {
+                        order.CustomerId = Guid.Parse(reader.GetString(0));
+                    }
                 }
             }
         }

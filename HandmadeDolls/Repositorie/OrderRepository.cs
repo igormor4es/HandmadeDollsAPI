@@ -1,37 +1,78 @@
-﻿using HandmadeDolls.Data;
+﻿using HandmadeDolls.DAL;
+using HandmadeDolls.Data;
 using HandmadeDolls.Models;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Data.Common;
+using static HandmadeDolls.Data.MinimalContextDb;
 
 namespace HandmadeDolls.Repositorie;
 
 public class OrderRepository
 {
-    public async Task<int> PostOrder(MinimalContextDb context, Order order, Object? customer, string connectionString)
+    public async Task<List<Order>> GetAllOrders(MinimalContextDb context)
+    {
+        List<Order> orders = new();
+
+        try
+        {
+            orders = await context.Orders.Include("OrderLists").Include("OrderLists.Product").ToListAsync();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+
+        return orders;
+    }
+
+    public async Task<Order?> GetOrderById(int id, MinimalContextDb context)
+    {
+        Order? orderById = new();
+
+        try
+        {
+            orderById = await context.Orders.Include("OrderLists").Include("OrderLists.Product").FirstOrDefaultAsync(p => p.Id == id);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+
+        return orderById;
+    }
+    public async Task<int> PostOrder(MinimalContextDb context, Order order, Object? customer)
     {
         var result = 1;
 
-        result = await VerifyItensOrder(context, order);
-        if (result != 1)
-            return result;
-
-        result = await VerifyUserAndCustomerClain(context, customer, connectionString);
-        if (result != 1)
-            return result;
-
-        var saveOrder = await SaveOrder(context, order, customer, connectionString);
-
-        if (order.OrderLists != null)
+        try
         {
-            foreach (var productOrder in order.OrderLists)
-            {
-                var product = await new ProductRepository().GetProductById(productOrder.ProductId, context);
+            result = await VerifyItensOrder(context, order);
+            if (result != 1)
+                return result;
 
-                await SaveOrderList(context, product, productOrder, saveOrder, connectionString);
+            result = await VerifyUserAndCustomerClain(customer);
+            if (result != 1)
+                return result;
+
+
+            var saveOrder = await SaveOrder(order, customer);
+
+            if (order.OrderLists != null)
+            {
+                foreach (var productOrder in order.OrderLists)
+                {
+                    var product = await new ProductRepository().GetProductById(productOrder.ProductId, context);
+                    await SaveOrderList(context, product, productOrder, saveOrder);
+                }
             }
         }
-        
+        catch (Exception)
+        {
+            throw;
+        }
+
         return result;
     }
 
@@ -66,12 +107,12 @@ public class OrderRepository
         return 1;
     }
 
-    public async Task<int> VerifyUserAndCustomerClain(MinimalContextDb context, object? customer, string connectionString)
+    public async Task<int> VerifyUserAndCustomerClain(object? customer)
     {
         if (customer != null)
         {
-            var verifyUser = await new UserRepository().VerifyUser(context, customer, connectionString);
-            var verifyCustomerClain = await new UserRepository().VerifyCustomerClain(context, customer, connectionString);
+            var verifyUser = await new UserRepository().VerifyUser(customer);
+            var verifyCustomerClain = await new UserRepository().VerifyCustomerClain(customer);
 
             if (verifyUser == 0)
                 return 4;
@@ -82,76 +123,93 @@ public class OrderRepository
 
         return 1;
     }
-    
-    public async Task<int> SaveOrder(MinimalContextDb context, Order order, Object? customer, string connectionString)
+
+    public async Task<int> SaveOrder(Order order, Object? customer)
     {
         Order newOrder = new()
         {
-            CustomerId = await new UserRepository().GetUserId(context, customer, connectionString),
+            CustomerId = await new UserRepository().GetUserId(customer),
             OrderDate = DateTime.Now,
             OrderStatus = order.OrderStatus,
         };
 
-        using (var connection = context.Database.GetDbConnection())
+
+        if (customer != null)
         {
-            if (connection.State != ConnectionState.Open)
+            await using (Context ctx = new())
             {
-                connection.ConnectionString = connectionString;
-                await connection.OpenAsync();
+                ctx.Connection.Open();
+                DbCommand cmd = ctx.Connection.CreateCommand();
+                cmd.CommandText = $"INSERT Orders (CustomerId, OrderDate, OrderStatus) VALUES('{newOrder.CustomerId}', '{newOrder.OrderDate:yyyy-MM-dd HH:mm:ss:fff}', @OrderStatus)";
+                cmd.CommandType = CommandType.Text;
+                cmd.Parameters.Add(SQLUteis.GetSqlParameter("@OrderStatus", SqlDbType.Int, (int)(OrderStatus)Enum.Parse(typeof(OrderStatus), order.OrderStatus.ToString())));
+                cmd.ExecuteNonQuery();
             }
-            
-            DbCommand cmd = connection.CreateCommand();
 
-            cmd.CommandText = $"INSERT Orders (CustomerId, OrderDate, OrderStatus) VALUES('{newOrder.CustomerId}', '{newOrder.OrderDate:yyyy-MM-dd HH:mm:ss}', {(int)(OrderStatus)Enum.Parse(typeof(OrderStatus), order.OrderStatus.ToString())})";
-            await cmd.ExecuteNonQueryAsync();
-
-            cmd.CommandText = $"SELECT Id FROM Orders WHERE CustomerId = '{newOrder.CustomerId}' AND OrderDate = '{newOrder.OrderDate:yyyy-MM-dd HH:mm:ss}'";
-            var reader = await cmd.ExecuteReaderAsync();
-
-            while (reader.Read())
+            //Esse Select não é uma boa prática, o correto caso quisesse usar o banco, era criar uma Procedure que retorna o Id do INSERT acima.
+            //Ocorreu um erro no EF e eu não iria conseguir resolver a tempo, por isso criei essa medida paliativa.
+            await using (Context ctx = new())
             {
-                newOrder.Id = reader.GetInt32(0);
+                ctx.Connection.Open();
+                DbCommand cmd = ctx.Connection.CreateCommand();
+                cmd.CommandText = $"SELECT Id FROM Orders WHERE CustomerId = '{newOrder.CustomerId}' AND OrderDate = '{newOrder.OrderDate:yyyy-MM-dd HH:mm:ss:fff}'";
+                cmd.CommandType = CommandType.Text;
+
+                using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        newOrder.Id = reader.GetValue<int>("Id");
+                    }
+                }
             }
-            
-            await connection.CloseAsync();
         }
 
         return newOrder.Id;
     }
 
-    public async Task SaveOrderList(MinimalContextDb context, Product? product, OrderList? productOrder, int saveOrder, string connectionString)
+    public async Task SaveOrderList(MinimalContextDb context, Product? product, OrderList? productOrder, int saveOrder)
     {
         if (product != null)
         {
-            OrderList listOrder = new()
+            if (productOrder != null)
             {
-                Price = product.Price,
-                Quantity = productOrder.Quantity,
-                OrderId = saveOrder,
-                ProductId = product.Id,
-            };
+                await using (Context ctx = new())
+                {
+                    ctx.Connection.Open();
+                    DbCommand cmd = ctx.Connection.CreateCommand();
+                    cmd.CommandText = $"INSERT OrderLists (Price, Quantity, OrderId, ProductId) VALUES(@Price, @Quantity, @OrderId, @ProductId)";
+                    cmd.CommandType = CommandType.Text;
+                    cmd.Parameters.Add(SQLUteis.GetSqlParameter("@Price", SqlDbType.Decimal, product.Price));
+                    cmd.Parameters.Add(SQLUteis.GetSqlParameter("@Quantity", SqlDbType.Decimal, productOrder.Quantity));
+                    cmd.Parameters.Add(SQLUteis.GetSqlParameter("@OrderId", SqlDbType.Int, saveOrder));
+                    cmd.Parameters.Add(SQLUteis.GetSqlParameter("@ProductId", SqlDbType.Int, product.Id));
+                    cmd.ExecuteNonQuery();
+                }
 
-            //using (var connection = context.Database.GetDbConnection())
-            //{
-            //    if (connection.State != ConnectionState.Open)
-            //    {
-            //        connection.ConnectionString = connectionString;
-            //        await connection.OpenAsync();
-            //    }
+                await new ProductRepository().UpdateStockProduct(context, product.Id, productOrder.Quantity);
+            }
 
-            //    DbCommand cmd = connection.CreateCommand();
+            if (product.Accessories != null)
+            {
+                foreach (var gifts in product.Accessories)
+                {
+                    await using (Context ctx = new())
+                    {
+                        ctx.Connection.Open();
+                        DbCommand cmd = ctx.Connection.CreateCommand();
+                        cmd.CommandText = $"INSERT OrderLists (Price, Quantity, OrderId, ProductId) VALUES(@Price, @Quantity, @OrderId, @ProductId)";
+                        cmd.CommandType = CommandType.Text;
+                        cmd.Parameters.Add(SQLUteis.GetSqlParameter("@Price", SqlDbType.Decimal, 0));
+                        cmd.Parameters.Add(SQLUteis.GetSqlParameter("@Quantity", SqlDbType.Decimal, 1));
+                        cmd.Parameters.Add(SQLUteis.GetSqlParameter("@OrderId", SqlDbType.Int, saveOrder));
+                        cmd.Parameters.Add(SQLUteis.GetSqlParameter("@ProductId", SqlDbType.Int, gifts.Id));
+                        cmd.ExecuteNonQuery();
+                    }
 
-            //    cmd.CommandText = $"INSERT Orders (CustomerId, OrderDate, OrderStatus) VALUES('{newOrder.CustomerId}', '{newOrder.OrderDate:yyyy-MM-dd HH:mm:ss}', {(int)(OrderStatus)Enum.Parse(typeof(OrderStatus), order.OrderStatus.ToString())})";
-            //    await cmd.ExecuteNonQueryAsync();
-
-            //    cmd.CommandText = $"SELECT Id FROM Orders WHERE CustomerId = '{newOrder.CustomerId}' AND OrderDate = '{newOrder.OrderDate:yyyy-MM-dd HH:mm:ss}'";
-            //    var reader = await cmd.ExecuteReaderAsync();
-
-            //    while (reader.Read())
-            //    {
-            //        newOrder.Id = reader.GetInt32(0);
-            //    }
-            //}
+                    await new ProductRepository().UpdateStockProduct(context, gifts.Id, 1);
+                }
+            }
         }
     }
 }

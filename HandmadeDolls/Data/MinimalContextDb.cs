@@ -1,5 +1,6 @@
 ﻿using HandmadeDolls.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Data.Common;
 
 namespace HandmadeDolls.Data;
 
@@ -52,5 +53,23 @@ public class MinimalContextDb : DbContext
         });
 
         base.OnModelCreating(modelBuilder);
-    }    
+    }
+
+    public class Context : DbContext
+    {
+        //O correto seria trazer a conexão do arquivo appsettings.json, essa foi uma medida paliativa. Necessário corrigir futuramente.
+        private const string DiabeTechConnection = "data source=(localdb)\\MSSQLLocalDB;initial catalog=HandmadeDolls;MultipleActiveResultSets=True;App=EntityFramework;Min Pool Size=5;Max Pool Size=250";
+
+        public DbConnection Connection { get; }
+
+        public Context()
+        {
+            this.Connection = this.Database.GetDbConnection();
+        }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseSqlServer(DiabeTechConnection);
+        }
+    }
 }

@@ -184,7 +184,7 @@ void MapActions(WebApplication app)
         if (currentUser == null)
             return Results.BadRequest("User not found!");
 
-        var userClaim = await new UserRepository().UserClaim(currentUser, context, claim, builder.Configuration.GetConnectionString("DefaultConnection"));
+        var userClaim = await new UserRepository().UserClaim(currentUser, claim);
 
         var result = userClaim switch
         {
@@ -211,7 +211,7 @@ void MapActions(WebApplication app)
         if (currentUser == null)
             return Results.BadRequest("User not found!");
 
-        var delete = await new UserRepository().DeleteUserClaim(currentUser, context, claim, builder.Configuration.GetConnectionString("DefaultConnection"));
+        var delete = await new UserRepository().DeleteUserClaim(currentUser, claim);
 
         var result = delete switch
         {
@@ -235,13 +235,15 @@ void MapActions(WebApplication app)
 
     app.MapGet("/", [AllowAnonymous] () => "Hello World =]").ExcludeFromDescription();
 
-    app.MapGet("/Product", /*[Authorize]*/ async (MinimalContextDb context) =>
+    app.MapGet("/Product", [Authorize] async (MinimalContextDb context) =>
     {
         var products = await new ProductRepository().GetAllProducts(context);
 
         return products;
 
-    }).WithName("GetProducts")
+    }).Produces<Product>(StatusCodes.Status200OK)
+      .Produces<Product>(StatusCodes.Status404NotFound)
+      .WithName("GetProducts")
       .WithTags("Product");
 
     app.MapGet("/Product/{id}", [Authorize] async (int id, MinimalContextDb context) =>
@@ -254,6 +256,28 @@ void MapActions(WebApplication app)
       .Produces<Product>(StatusCodes.Status404NotFound)
       .WithName("GetProductById")
       .WithTags("Product");
+
+    app.MapGet("/Order", [Authorize] async (MinimalContextDb context) =>
+    {
+        var orders = await new OrderRepository().GetAllOrders(context);
+
+        return orders;
+
+    }).Produces<Product>(StatusCodes.Status200OK)
+      .Produces<Product>(StatusCodes.Status404NotFound)
+      .WithName("GetOrders")
+      .WithTags("Order");
+
+    app.MapGet("/Order/{id}", [Authorize] async (int id, MinimalContextDb context) =>
+    {
+        var orderById = await new OrderRepository().GetOrderById(id, context);
+
+        return orderById is Order order ? Results.Ok(order) : Results.NotFound();
+
+    }).Produces<Product>(StatusCodes.Status200OK)
+      .Produces<Product>(StatusCodes.Status404NotFound)
+      .WithName("GetOrderById")
+      .WithTags("Order");
 
     #endregion
 
@@ -285,18 +309,18 @@ void MapActions(WebApplication app)
       .WithName("PostProduct")
       .WithTags("Product");
 
-    app.MapPost("/Order", /*[Authorize]*/ async (MinimalContextDb context, Order order, string token) =>
+    app.MapPost("/Order", [Authorize] async (MinimalContextDb context, Order order, string token) =>
     {
         if (!MiniValidator.TryValidate(order, out var errors))
             return Results.ValidationProblem(errors);
         
         var readToken = new JwtSecurityTokenHandler().ReadJwtToken(token).Payload.TryGetValue("email", out var customer);
 
-        var postOrder = await new OrderRepository().PostOrder(context, order, customer, builder.Configuration.GetConnectionString("DefaultConnection"));
-
+        var postOrder = await new OrderRepository().PostOrder(context, order, customer);
+        
         var result = postOrder switch
         {
-            1 => Results.CreatedAtRoute("GetProductById", new { id = order.Id }, order),
+            1 => Results.Ok("Order saved successfully!"),
             2 => Results.BadRequest("Product out of stock!"),
             3 => Results.BadRequest("The doll gift is out of stock!"),
             4 => Results.BadRequest("Customer not found!"),
@@ -309,7 +333,7 @@ void MapActions(WebApplication app)
     }).ProducesValidationProblem()
   .Produces<Product>(StatusCodes.Status201Created)
   .Produces(StatusCodes.Status400BadRequest)
-  //.RequireAuthorization("Customer")
+  .RequireAuthorization("Customer")
   .WithName("PostOrder")
   .WithTags("Order");
 
@@ -327,7 +351,7 @@ void MapActions(WebApplication app)
         if (!MiniValidator.TryValidate(product, out var errors))
             return Results.ValidationProblem(errors);
 
-        //Foi feito um Editar simples, somente do Produto. É necessário implementar para editar caso seja uma boneca com acessórios de brinde.
+        //Foi feito um Editar simples, somente do Produto. É necessário implementar caso seja uma boneca com acessórios de brinde, será necessário conseguir editar a lista de acessórios.
         context.Products.Update(product).State = EntityState.Modified;
         var result = await context.SaveChangesAsync();
 
