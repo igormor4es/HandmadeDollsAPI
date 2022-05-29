@@ -1,4 +1,5 @@
 ﻿using HandmadeDolls.Data;
+using HandmadeDolls.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -125,5 +126,97 @@ public class UserRepository
                 await command.ExecuteNonQueryAsync();
             }
         }      
+    }
+
+    public async Task<int> VerifyUser(MinimalContextDb context, Object? customer, string connectionString)
+    {
+        LoginUser user = new();
+
+        using (var connection = context.Database.GetDbConnection())
+        {
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.ConnectionString = connectionString;
+                await connection.OpenAsync();
+            }
+
+            DbCommand cmd = connection.CreateCommand();
+            cmd.CommandText = $"SELECT UserName FROM AspNetUsers WHERE Email = '{customer}'";
+
+            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    user.Email = reader.GetString(0);
+                }
+            }
+            await connection.CloseAsync();
+        }
+
+        if (!String.IsNullOrEmpty(user.Email))
+            return 1;
+        
+        return 0;
+    }
+
+    public async Task<int> VerifyCustomerClain(MinimalContextDb context, Object? customer, string connectionString)
+    {
+        LoginUser user = new();
+
+        using (var connection = context.Database.GetDbConnection())
+        {
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.ConnectionString = connectionString;
+                await connection.OpenAsync();
+            }
+            
+            DbCommand cmd = connection.CreateCommand();
+            cmd.CommandText = $"SELECT ANU.UserName FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE ANU.UserName = '{customer}' AND ClaimType = 'Customer'";
+
+            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    user.Email = reader.GetString(0);
+                }              
+            }
+            await connection.CloseAsync();
+        }
+
+        if (!String.IsNullOrEmpty(user.Email))
+            return 1;
+
+        return 0;
+    }
+
+    public async Task<Guid> GetUserId(MinimalContextDb context, Object? customer, string connectionString)
+    {
+        Order order = new();
+
+        using (var connection = context.Database.GetDbConnection())
+        {
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.ConnectionString = connectionString;
+                await connection.OpenAsync();
+            }
+            
+            DbCommand cmd = connection.CreateCommand();
+            cmd.CommandText = $"SELECT AUC.UserId FROM AspNetUserClaims AUC JOIN AspNetUsers ANU ON AUC.UserId = ANU.Id WHERE ANU.UserName = '{customer}' AND ClaimType = 'Customer'";
+
+            using (SqlDataReader reader = (SqlDataReader)cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    order.CustomerId = Guid.Parse(reader.GetString(0));
+                }
+            }
+        }
+
+        if (order.CustomerId == Guid.Empty)
+            return order.CustomerId;
+
+        return order.CustomerId;
     }
 }

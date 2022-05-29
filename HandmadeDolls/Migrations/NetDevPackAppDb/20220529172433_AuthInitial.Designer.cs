@@ -12,7 +12,7 @@ using NetDevPack.Identity.Data;
 namespace HandmadeDolls.Migrations.NetDevPackAppDb
 {
     [DbContext(typeof(NetDevPackAppDbContext))]
-    [Migration("20220528005002_AuthInitial")]
+    [Migration("20220529172433_AuthInitial")]
     partial class AuthInitial
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

@@ -9,6 +9,7 @@ using Microsoft.OpenApi.Models;
 using MiniValidation;
 using NetDevPack.Identity.Jwt;
 using NetDevPack.Identity.Model;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -104,7 +105,7 @@ void MapActions(WebApplication app)
 {
     #region JWT
 
-    app.MapPost("/Api/Registro", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, RegisterUser registerUser) =>
+    app.MapPost("/Api/Register", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, RegisterUser registerUser) =>
     {
         if (registerUser == null)
             return Results.BadRequest("User not informed.");
@@ -197,7 +198,6 @@ void MapActions(WebApplication app)
     }).ProducesValidationProblem()
       .Produces(StatusCodes.Status200OK)
       .Produces(StatusCodes.Status400BadRequest)
-      .RequireAuthorization("Administrator")
       .WithName("UserClaim")
       .WithTags("User");
 
@@ -285,11 +285,39 @@ void MapActions(WebApplication app)
       .WithName("PostProduct")
       .WithTags("Product");
 
+    app.MapPost("/Order", /*[Authorize]*/ async (MinimalContextDb context, Order order, string token) =>
+    {
+        if (!MiniValidator.TryValidate(order, out var errors))
+            return Results.ValidationProblem(errors);
+        
+        var readToken = new JwtSecurityTokenHandler().ReadJwtToken(token).Payload.TryGetValue("email", out var customer);
+
+        var postOrder = await new OrderRepository().PostOrder(context, order, customer, builder.Configuration.GetConnectionString("DefaultConnection"));
+
+        var result = postOrder switch
+        {
+            1 => Results.CreatedAtRoute("GetProductById", new { id = order.Id }, order),
+            2 => Results.BadRequest("Product out of stock!"),
+            3 => Results.BadRequest("The doll gift is out of stock!"),
+            4 => Results.BadRequest("Customer not found!"),
+            5 => Results.BadRequest("User does not have the Customer claim!"),
+            _ => Results.BadRequest("There was a problem saving the record!")
+        };
+
+        return result;
+
+    }).ProducesValidationProblem()
+  .Produces<Product>(StatusCodes.Status201Created)
+  .Produces(StatusCodes.Status400BadRequest)
+  //.RequireAuthorization("Customer")
+  .WithName("PostOrder")
+  .WithTags("Order");
+
     #endregion
 
     #region PUT's
 
-    app.MapPut("/Api/Fornecedor/{id}", [Authorize] async (int id, MinimalContextDb context, Product product) =>
+    app.MapPut("/Api/Product/{id}", [Authorize] async (int id, MinimalContextDb context, Product product) =>
     {
         var putProduct = await context.Products.AsNoTracking<Product>().FirstOrDefaultAsync(p => p.Id == id);
 
@@ -299,7 +327,7 @@ void MapActions(WebApplication app)
         if (!MiniValidator.TryValidate(product, out var errors))
             return Results.ValidationProblem(errors);
 
-        //É necessário verificar se na tabela DollsAccessories ele não possui registros nela. Caso ele já exista lá e vc deseje alterar o seu ProductType isso não será possível.
+        //Foi feito um Editar simples, somente do Produto. É necessário implementar para editar caso seja uma boneca com acessórios de brinde.
         context.Products.Update(product).State = EntityState.Modified;
         var result = await context.SaveChangesAsync();
 
