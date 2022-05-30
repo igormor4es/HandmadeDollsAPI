@@ -105,7 +105,7 @@ void MapActions(WebApplication app)
 {
     #region JWT
 
-    app.MapPost("/Api/Register", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, RegisterUser registerUser) =>
+    app.MapPost("/Register", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, RegisterUser registerUser) =>
     {
         if (registerUser == null)
             return Results.BadRequest("User not informed.");
@@ -141,7 +141,7 @@ void MapActions(WebApplication app)
       .WithName("RegisterUser")
       .WithTags("User");
 
-    app.MapPost("/Api/Login", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, LoginUser loginUser) =>
+    app.MapPost("/Login", [AllowAnonymous] async (SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, IOptions<AppJwtSettings> appJwtSettings, LoginUser loginUser) =>
     {
         if (loginUser == null)
             return Results.BadRequest("User not informed.");
@@ -174,7 +174,7 @@ void MapActions(WebApplication app)
       .WithName("LoginUser")
       .WithTags("User");
 
-    app.MapPost("/Api/UserClaim", [Authorize] async (SignInManager<IdentityUser> signInManager, MinimalContextDb context, string loginUser, string claim) =>
+    app.MapPost("/UserClaim", [Authorize] async (SignInManager<IdentityUser> signInManager, MinimalContextDb context, string loginUser, string claim) =>
     {        
         if (loginUser == null)
             return Results.BadRequest("User not informed.");
@@ -201,7 +201,7 @@ void MapActions(WebApplication app)
       .WithName("UserClaim")
       .WithTags("User");
 
-    app.MapDelete("/Api/UserClaim", [Authorize] async (SignInManager<IdentityUser> signInManager, MinimalContextDb context, string loginUser, string claim) =>
+    app.MapDelete("/UserClaim", [Authorize] async (SignInManager<IdentityUser> signInManager, MinimalContextDb context, string loginUser, string claim) =>
     {
         if (loginUser == null)
             return Results.BadRequest("User not informed.");
@@ -341,7 +341,7 @@ void MapActions(WebApplication app)
 
     #region PUT's
 
-    app.MapPut("/Api/Product/{id}", [Authorize] async (int id, MinimalContextDb context, Product product) =>
+    app.MapPut("/Product/{id}", [Authorize] async (int id, MinimalContextDb context, Product product) =>
     {
         var putProduct = await context.Products.AsNoTracking<Product>().FirstOrDefaultAsync(p => p.Id == id);
 
