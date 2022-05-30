@@ -1,5 +1,5 @@
 # HandmadeDollsAPI
-![EndPoints](https://github.com/igormor4es/HandmadeDollsAPI/blob/main/EndPoints.PNG)
+![EndPoints](https://github.com/igormor4es/HandmadeDollsAPI/blob/main/ImgEndPoints.PNG)
 
 A HandmadeDollsAPI foi criada na Arquietetura de MinimalAPI, permitindo criar APIs com o mínimo de dependência do framework WebAPI e o mínimo de código e arquivos necessários para o desenvolvimento minimalista de APIs. Como principais objetivos as Minimals APIs da plataforma .NET permitem :
 
