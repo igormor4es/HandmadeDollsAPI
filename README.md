@@ -41,7 +41,7 @@ Clone o repositório em sua máquina:
 ```
 git clone https://github.com/igormor4es/HandmadeDollsAPI.git
 ```
-- A API conta com três contextos de aplicação, porém, precisamos executar os comandos somente em dois deles:
+A API conta com três contextos de aplicação, porém, precisamos executar os comandos somente em dois deles:
 ```
 Add-Migration -v Initial -Context MinimalContextDb
 Add-Migration -v AuthInitial -Context NetDevPackAppDbContext
@@ -49,6 +49,11 @@ Add-Migration -v AuthInitial -Context NetDevPackAppDbContext
 Update-Database -v -Context MinimalContextDb
 Update-Database -v -Context NetDevPackAppDbContext
 ```
+Instalação Visual Studio 2022
+```
+https://visualstudio.microsoft.com/pt-br/vs/
+```
+
 ## EndPoints
 Para utilizar os EndPoints, deve-se estar autorizado na API. Caso não tenha um Usuário, somente fazer no cadastro e pegar no retorno o JWT, clicar no botão superior direito com nome de Authorize e inserir o Token conforme orientação descrita.
 Algumas ações demandam que o usuário tenha uma Claim específica. Basta cadastrar a claim no endpoint /UserClaim. Na API trabalhamos com duas Claims, Administrator ou Customer.
